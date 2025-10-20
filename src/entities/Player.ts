@@ -87,6 +87,9 @@ export class Player {
       this.body.setVelocityX(0);
     }
 
+    // 히트박스 위치 동기화 (매 프레임)
+    this.updateHitboxPosition();
+
     // Z키 공격
     if (Phaser.Input.Keyboard.JustDown(keys.Z)) {
       this.handleAttack();
@@ -283,6 +286,21 @@ export class Player {
         this.hitbox = undefined;
       }
     });
+  }
+
+  /**
+   * 히트박스 위치 동기화 (매 프레임)
+   */
+  private updateHitboxPosition() {
+    if (!this.hitbox) return;
+
+    // 플레이어 방향
+    const direction = this.sprite.scaleX > 0 ? 1 : -1;
+    const offsetX = direction * 50;
+
+    // 히트박스를 플레이어 sprite 위치에 맞춤
+    this.hitbox.x = this.sprite.x + offsetX;
+    this.hitbox.y = this.sprite.y;
   }
 
   /**
