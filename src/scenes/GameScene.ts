@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Colors } from '../utils/Colors';
 import { Player } from '../entities/Player';
+import { Enemy } from '../entities/Enemy';
 
 /**
  * GameScene - 메인 게임 장면
@@ -12,6 +13,7 @@ export class GameScene extends Phaser.Scene {
   private platforms?: Phaser.Physics.Arcade.StaticGroup;
   private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
   private keys?: { Z: Phaser.Input.Keyboard.Key };
+  private enemies: Enemy[] = [];
 
   constructor() {
     super({ key: 'GameScene' });
@@ -48,6 +50,9 @@ export class GameScene extends Phaser.Scene {
       color: '#FFFFFF',
       fontFamily: 'monospace',
     });
+
+    // 적 더미 생성
+    this.createEnemies();
   }
 
   private createPlatforms() {
@@ -100,6 +105,66 @@ export class GameScene extends Phaser.Scene {
 
     // Player 업데이트 (이동 + 공격)
     this.player.update(delta, this.cursors, this.keys);
+
+    // 충돌 감지 (히트박스 vs 적)
+    this.checkAttackCollisions();
+  }
+
+  /**
+   * 공격 충돌 감지
+   */
+  private checkAttackCollisions() {
+    const hitbox = this.player?.getHitbox();
+    if (!hitbox) return;
+
+    // 히트박스와 모든 적 충돌 체크
+    this.enemies.forEach((enemy, index) => {
+      if (this.physics.overlap(hitbox, enemy.getSprite())) {
+        // 충돌 발생!
+        const attackDirection = this.player!.sprite.scaleX > 0 ? 1 : -1;
+        const isDead = enemy.hit(attackDirection);
+
+        // HIT 텍스트 표시
+        const comboCount = this.player!.getAttackState() === 'attack1' ? 1 :
+                          this.player!.getAttackState() === 'attack2' ? 2 : 3;
+        this.showHitText(enemy.getSprite().x, enemy.getSprite().y - 30, comboCount);
+
+        // 3단 공격이면 화면 흔들림
+        if (comboCount === 3) {
+          this.cameras.main.shake(100, 0.01); // 0.1초, 강도 0.01
+        }
+
+        // 사망 시 배열에서 제거
+        if (isDead) {
+          this.enemies.splice(index, 1);
+        }
+      }
+    });
+  }
+
+  /**
+   * 적 더미 생성
+   */
+  private createEnemies() {
+    // 5개 적 생성 (다양한 위치)
+    const positions = [
+      { x: 400, y: 450 },  // 왼쪽 플랫폼 위
+      { x: 500, y: 450 },
+      { x: 800, y: 350 },  // 오른쪽 플랫폼 위
+      { x: 900, y: 350 },
+      { x: 1000, y: 600 }, // 바닥
+    ];
+
+    positions.forEach(pos => {
+      const enemy = new Enemy(this, pos.x, pos.y);
+
+      // 플랫폼과 충돌 설정
+      this.physics.add.collider(enemy.getSprite(), this.platforms!);
+
+      this.enemies.push(enemy);
+    });
+
+    console.log(`🎯 적 ${this.enemies.length}개 생성 완료`);
   }
 
   /**
