@@ -54,7 +54,7 @@ export class Player {
     this.body = this.sprite.body as Phaser.Physics.Arcade.Body;
     this.body.setBounce(0);
     this.body.setCollideWorldBounds(true);
-    this.body.setOffset(0, 0); // body offset 명시
+    // body.setOffset() 호출 안 함 → Phaser가 origin 기반으로 자동 계산
 
     console.log('🎮 Player 클래스 생성 완료');
   }
