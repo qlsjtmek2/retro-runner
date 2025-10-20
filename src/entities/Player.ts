@@ -298,9 +298,12 @@ export class Player {
     const direction = this.sprite.scaleX > 0 ? 1 : -1;
     const offsetX = direction * 50;
 
-    // 히트박스를 플레이어 sprite 위치에 맞춤
-    this.hitbox.x = this.sprite.x + offsetX;
-    this.hitbox.y = this.sprite.y;
+    // Physics body의 중심을 기준으로 히트박스 배치
+    const bodyCenterX = this.body.x + this.body.width / 2;
+    const bodyCenterY = this.body.y + this.body.height / 2;
+
+    this.hitbox.x = bodyCenterX + offsetX;
+    this.hitbox.y = bodyCenterY;
   }
 
   /**
