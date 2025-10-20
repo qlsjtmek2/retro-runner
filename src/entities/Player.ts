@@ -47,12 +47,14 @@ export class Player {
     // 스프라이트 생성 (임시로 Rectangle)
     this.sprite = scene.add.rectangle(x, y, 64, 64, Colors.CHAR_PRIMARY);
     this.sprite.setStrokeStyle(5, Colors.OUTLINE);
+    this.sprite.setOrigin(0.5, 0.5); // 명시적 origin 설정 (중심)
 
     // 물리 활성화
     scene.physics.add.existing(this.sprite);
     this.body = this.sprite.body as Phaser.Physics.Arcade.Body;
     this.body.setBounce(0);
     this.body.setCollideWorldBounds(true);
+    this.body.setOffset(0, 0); // body offset 명시
 
     console.log('🎮 Player 클래스 생성 완료');
   }
@@ -298,12 +300,9 @@ export class Player {
     const direction = this.sprite.scaleX > 0 ? 1 : -1;
     const offsetX = direction * 50;
 
-    // Physics body의 중심을 기준으로 히트박스 배치
-    const bodyCenterX = this.body.x + this.body.width / 2;
-    const bodyCenterY = this.body.y + this.body.height / 2;
-
-    this.hitbox.x = bodyCenterX + offsetX;
-    this.hitbox.y = bodyCenterY;
+    // sprite.x는 origin이 center이므로 직접 사용
+    this.hitbox.x = this.sprite.x + offsetX;
+    this.hitbox.y = this.sprite.y;
   }
 
   /**
