@@ -22,6 +22,7 @@ export class GameScene extends Phaser.Scene {
   // UI
   private gameOverText?: Phaser.GameObjects.Text;
   private restartText?: Phaser.GameObjects.Text;
+  private mobileHintText?: Phaser.GameObjects.Text;
 
   // Particle Emitter
   private landingParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -97,6 +98,45 @@ export class GameScene extends Phaser.Scene {
 
     // 터치 입력 설정
     this.setupTouchControls();
+
+    // 모바일 환경이면 터치 안내 표시
+    this.showMobileHint();
+  }
+
+  private showMobileHint(): void {
+    // 모바일 또는 작은 화면 감지
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isSmallScreen = window.innerWidth <= 768 || window.innerHeight <= 600;
+
+    if (isMobile || isSmallScreen) {
+      this.mobileHintText = this.add.text(
+        GameConfig.WIDTH / 2,
+        30,
+        'TAP LEFT/RIGHT TO MOVE • TAP CENTER TO JUMP',
+        {
+          fontSize: '16px',
+          color: '#00ffff',
+          fontFamily: 'monospace',
+          stroke: '#000033',
+          strokeThickness: 3,
+          align: 'center',
+        }
+      ).setOrigin(0.5);
+
+      // 5초 후 서서히 사라짐
+      this.time.delayedCall(5000, () => {
+        if (this.mobileHintText) {
+          this.tweens.add({
+            targets: this.mobileHintText,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => {
+              this.mobileHintText?.destroy();
+            },
+          });
+        }
+      });
+    }
   }
 
   private setupTouchControls(): void {
