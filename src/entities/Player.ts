@@ -1,345 +1,182 @@
 import Phaser from 'phaser';
-import { Colors } from '../utils/Colors';
+import { GameConfig } from '../config';
 
-/**
- * 공격 상태
- */
-export enum AttackState {
-  IDLE = 'idle',
-  ATTACK_1 = 'attack1',
-  ATTACK_2 = 'attack2',
-  ATTACK_3 = 'attack3',
-}
-
-/**
- * Player 클래스
- * 캐릭터 이동, 공격, 콤보 시스템을 담당
- */
 export class Player {
-  public sprite: Phaser.GameObjects.Rectangle;
+  public sprite: Phaser.Physics.Arcade.Sprite;
+  private cursors: Phaser.Types.Input.Keyboard.CursorKeys;
   private scene: Phaser.Scene;
-  private body: Phaser.Physics.Arcade.Body;
 
-  // 이동 관련
-  private speed: number = 300;
-  private jumpSpeed: number = -500;
+  // Trail 효과용
+  private lastTrailTime: number = 0;
 
-  // 공격 관련
-  private attackState: AttackState = AttackState.IDLE;
-  private comboTimer: number = 0;
-  private comboWindow: number = 500; // 0.5초 콤보 윈도우
-  private attackDurations: Map<AttackState, number> = new Map([
-    [AttackState.ATTACK_1, 300], // 0.3초
-    [AttackState.ATTACK_2, 300], // 0.3초
-    [AttackState.ATTACK_3, 400], // 0.4초
-  ]);
-  private attackTimer: number = 0;
+  // 더블점프 관리
+  private jumpCount: number = 0;
+  private hasReleasedJump: boolean = true; // 점프 키를 뗐는지 추적
 
-  // 히트박스
-  private hitbox?: Phaser.GameObjects.Rectangle;
-
-  // 이펙트
-  private afterImages: Phaser.GameObjects.Rectangle[] = [];
+  // 파티클 (외부에서 주입)
+  public landingParticles?: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.scene = scene;
 
-    // 스프라이트 생성 (임시로 Rectangle)
-    this.sprite = scene.add.rectangle(x, y, 64, 64, Colors.CHAR_PRIMARY);
-    this.sprite.setStrokeStyle(5, Colors.OUTLINE);
-    this.sprite.setOrigin(0.5, 0.5); // 명시적 origin 설정 (중심)
+    // 플레이어 스프라이트 생성
+    this.sprite = scene.physics.add.sprite(x, y, '');
 
-    // 물리 활성화
-    scene.physics.add.existing(this.sprite);
-    this.body = this.sprite.body as Phaser.Physics.Arcade.Body;
-    this.body.setBounce(0);
-    this.body.setCollideWorldBounds(true);
-    // body.setOffset() 호출 안 함 → Phaser가 origin 기반으로 자동 계산
+    // 플레이어 텍스처 생성 (하나만 사용)
+    if (!scene.textures.exists('player')) {
+      const graphics = scene.add.graphics();
+      graphics.fillStyle(GameConfig.COLORS.PLAYER, 1);
+      graphics.fillRect(0, 0, GameConfig.PLAYER.WIDTH, GameConfig.PLAYER.HEIGHT);
+      graphics.generateTexture('player', GameConfig.PLAYER.WIDTH, GameConfig.PLAYER.HEIGHT);
+      graphics.destroy();
+    }
 
-    console.log('🎮 Player 클래스 생성 완료');
+    this.sprite.setTexture('player');
+
+    // 물리 바디 설정
+    this.sprite.setCollideWorldBounds(true);
+    this.sprite.body!.setSize(GameConfig.PLAYER.WIDTH, GameConfig.PLAYER.HEIGHT);
+
+    // 키보드 입력 설정
+    this.cursors = scene.input.keyboard!.createCursorKeys();
   }
 
-  /**
-   * 매 프레임 업데이트
-   */
-  update(delta: number, cursors: Phaser.Types.Input.Keyboard.CursorKeys, keys: { Z: Phaser.Input.Keyboard.Key }) {
-    // 공격 타이머 업데이트
-    if (this.attackState !== AttackState.IDLE) {
-      this.attackTimer -= delta;
-      if (this.attackTimer <= 0) {
-        // 공격 종료
-        this.endAttack();
-      }
+  update(): void {
+    const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+    const isOnGround = body.touching.down;
+
+    // 착지 시 점프 카운트 리셋
+    if (isOnGround) {
+      this.jumpCount = 0;
     }
 
-    // 콤보 타이머 업데이트
-    if (this.comboTimer > 0) {
-      this.comboTimer -= delta;
-      if (this.comboTimer <= 0) {
-        // 콤보 리셋
-        this.resetCombo();
-      }
-    }
-
-    // 공격 중이 아닐 때만 이동 가능
-    if (this.attackState === AttackState.IDLE) {
-      this.handleMovement(cursors);
-    } else {
-      // 공격 중에는 이동 정지
-      this.body.setVelocityX(0);
-    }
-
-    // 히트박스 위치 동기화 (매 프레임)
-    this.updateHitboxPosition();
-
-    // Z키 공격
-    if (Phaser.Input.Keyboard.JustDown(keys.Z)) {
-      this.handleAttack();
-    }
-  }
-
-  /**
-   * 이동 처리
-   */
-  private handleMovement(cursors: Phaser.Types.Input.Keyboard.CursorKeys) {
     // 좌우 이동
-    if (cursors.left.isDown) {
-      this.body.setVelocityX(-this.speed);
-      this.sprite.setScale(-1, 1); // 좌우 반전
-    } else if (cursors.right.isDown) {
-      this.body.setVelocityX(this.speed);
-      this.sprite.setScale(1, 1);
+    if (this.cursors.left.isDown) {
+      this.sprite.setVelocityX(-GameConfig.PLAYER.SPEED);
+    } else if (this.cursors.right.isDown) {
+      this.sprite.setVelocityX(GameConfig.PLAYER.SPEED);
     } else {
-      this.body.setVelocityX(0);
+      this.sprite.setVelocityX(0);
     }
 
-    // 점프
-    if (cursors.up.isDown && this.body.touching.down) {
-      this.body.setVelocityY(this.jumpSpeed);
+    // 더블점프 시스템
+    if (this.cursors.up.isDown && this.hasReleasedJump) {
+      if (this.jumpCount < GameConfig.PLAYER.MAX_JUMPS) {
+        this.sprite.setVelocityY(GameConfig.PLAYER.JUMP_VELOCITY);
+        this.applyStretch(); // 점프 시 Stretch
+        this.jumpCount++;
+        this.hasReleasedJump = false; // 키를 뗄 때까지 더 이상 점프 불가
+      }
     }
-  }
 
-  /**
-   * 공격 처리
-   */
-  private handleAttack() {
-    // 공격 중이면 콤보 체크
-    if (this.attackState === AttackState.ATTACK_1 && this.comboTimer > 0) {
-      this.startAttack(AttackState.ATTACK_2);
-    } else if (this.attackState === AttackState.ATTACK_2 && this.comboTimer > 0) {
-      this.startAttack(AttackState.ATTACK_3);
-    } else if (this.attackState === AttackState.IDLE) {
-      // 새 공격 시작
-      this.startAttack(AttackState.ATTACK_1);
+    // 점프 키를 뗐을 때 플래그 리셋
+    if (!this.cursors.up.isDown) {
+      this.hasReleasedJump = true;
     }
-  }
 
-  /**
-   * 공격 시작
-   */
-  private startAttack(state: AttackState) {
-    console.log(`⚔️ 공격 시작: ${state}`);
-
-    this.attackState = state;
-    this.attackTimer = this.attackDurations.get(state) || 300;
-    this.comboTimer = this.comboWindow;
-
-    // 공격 애니메이션 (시각적 피드백)
-    this.playAttackAnimation(state);
-
-    // 히트박스 생성
-    this.createHitbox(state);
-  }
-
-  /**
-   * 공격 애니메이션 (임시 시각 효과)
-   */
-  private playAttackAnimation(state: AttackState) {
-    const originalScale = this.sprite.scaleX;
-
-    // 각 공격별 시각 효과
-    switch (state) {
-      case AttackState.ATTACK_1:
-        // 1타: 빠른 찌르기 (앞으로 확대)
-        this.sprite.setScale(originalScale * 1.3, 1.1);
-        this.scene.tweens.add({
-          targets: this.sprite,
-          scaleX: originalScale,
-          scaleY: 1,
-          duration: 150,
-          ease: 'Back.easeOut',
-        });
-        // 잔상 효과
-        this.createAfterImage();
-        break;
-
-      case AttackState.ATTACK_2:
-        // 2타: 회전 베기 (회전 효과)
-        this.scene.tweens.add({
-          targets: this.sprite,
-          angle: 360,
-          duration: 300,
-          ease: 'Cubic.easeOut',
-          onComplete: () => {
-            this.sprite.setAngle(0);
-          },
-        });
-        // 여러 잔상
-        for (let i = 0; i < 3; i++) {
-          this.scene.time.delayedCall(i * 100, () => this.createAfterImage());
-        }
-        break;
-
-      case AttackState.ATTACK_3:
-        // 3타: 강공격 (크게 확대 + 깜빡임)
-        this.sprite.setScale(originalScale * 1.5, 1.5);
-        this.sprite.setFillStyle(Colors.UI_WHITE); // 흰색 플래시
-        this.scene.tweens.add({
-          targets: this.sprite,
-          scaleX: originalScale,
-          scaleY: 1,
-          duration: 200,
-          ease: 'Back.easeOut',
-          onComplete: () => {
-            this.sprite.setFillStyle(Colors.CHAR_PRIMARY); // 원래 색상 복구
-          },
-        });
-        // 많은 잔상
-        for (let i = 0; i < 5; i++) {
-          this.scene.time.delayedCall(i * 80, () => this.createAfterImage());
-        }
-        break;
+    // 빠른 하강 (공중에 있을 때만)
+    if (this.cursors.down.isDown && !isOnGround) {
+      this.sprite.setVelocityY(GameConfig.PLAYER.FAST_FALL_VELOCITY);
     }
+
+    // 착지 감지 (Squash 효과)
+    // if (isOnGround && !this.wasOnGround) {
+    //   this.applySquash();
+    // }
+
+    // Trail 효과
+    this.updateTrail();
   }
 
-  /**
-   * 잔상 생성 (Neon Comic 이펙트)
-   */
-  private createAfterImage() {
-    const afterImage = this.scene.add.rectangle(
-      this.sprite.x,
-      this.sprite.y,
-      64,
-      64,
-      Colors.UI_WHITE,
-      0.5 // 50% 투명도
-    );
-    afterImage.setScale(this.sprite.scaleX, this.sprite.scaleY);
-    afterImage.setAngle(this.sprite.angle);
+  // private applySquash(): void {
+  //   // 착지 파티클 발사
+  //   if (this.landingParticles) {
+  //     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
+  //     // 일정 속도 이상으로 떨어졌을 때만 파티클 표시
+  //     if (Math.abs(body.velocity.y) > 100) {
+  //       this.landingParticles.emitParticleAt(
+  //         this.sprite.x,
+  //         this.sprite.y + GameConfig.PLAYER.HEIGHT / 2,
+  //         5
+  //       );
+  //     }
+  //   }
 
-    this.afterImages.push(afterImage);
+  //   // 기존 scale 애니메이션 중단
+  //   this.scene.tweens.killTweensOf(this.sprite);
 
-    // 0.2초 후 페이드 아웃
+  //   // 착지 시: 세로 압축, 가로 확장 → 원래대로 복귀
+  //   this.scene.tweens.add({
+  //     targets: this.sprite,
+  //     scaleX: GameConfig.ANIMATION.SQUASH_SCALE_X,
+  //     scaleY: GameConfig.ANIMATION.SQUASH_SCALE_Y,
+  //     duration: GameConfig.ANIMATION.SQUASH_DURATION,
+  //     ease: 'Back.easeOut',
+  //     onComplete: () => {
+  //       // 원래 크기로 복귀
+  //       this.scene.tweens.add({
+  //         targets: this.sprite,
+  //         scaleX: 1,
+  //         scaleY: 1,
+  //         duration: GameConfig.ANIMATION.SQUASH_DURATION,
+  //         ease: 'Quad.easeOut',
+  //       });
+  //     },
+  //   });
+  // }
+
+  private applyStretch(): void {
+    // 기존 scale 애니메이션 중단
+    this.scene.tweens.killTweensOf(this.sprite);
+
+    // 점프 시: 세로 확장, 가로 압축 → 원래대로 복귀
     this.scene.tweens.add({
-      targets: afterImage,
-      alpha: 0,
-      duration: 200,
+      targets: this.sprite,
+      scaleX: GameConfig.ANIMATION.STRETCH_SCALE_X,
+      scaleY: GameConfig.ANIMATION.STRETCH_SCALE_Y,
+      duration: GameConfig.ANIMATION.SQUASH_DURATION,
+      ease: 'Back.easeOut',
       onComplete: () => {
-        afterImage.destroy();
-        const index = this.afterImages.indexOf(afterImage);
-        if (index > -1) {
-          this.afterImages.splice(index, 1);
-        }
+        // 원래 크기로 복귀
+        this.scene.tweens.add({
+          targets: this.sprite,
+          scaleX: 1,
+          scaleY: 1,
+          duration: GameConfig.ANIMATION.SQUASH_DURATION,
+          ease: 'Quad.easeOut',
+        });
       },
     });
   }
 
-  /**
-   * 히트박스 생성
-   */
-  private createHitbox(state: AttackState) {
-    // 기존 히트박스 제거
-    if (this.hitbox) {
-      this.hitbox.destroy();
+  private updateTrail(): void {
+    const now = Date.now();
+
+    // 50ms마다 잔상 생성
+    if (now - this.lastTrailTime > 50 && Math.abs(this.sprite.body!.velocity.x) > 50) {
+      const trail = this.scene.add.sprite(
+        this.sprite.x,
+        this.sprite.y,
+        'player'
+      );
+
+      trail.setScale(this.sprite.scaleX, this.sprite.scaleY);
+      trail.setAlpha(GameConfig.ANIMATION.TRAIL_ALPHA);
+      trail.setTint(GameConfig.COLORS.PLAYER);
+
+      // Fade out
+      this.scene.tweens.add({
+        targets: trail,
+        alpha: 0,
+        duration: GameConfig.ANIMATION.TRAIL_LIFETIME,
+        onComplete: () => trail.destroy(),
+      });
+
+      this.lastTrailTime = now;
     }
-
-    // 방향에 따른 히트박스 위치
-    const direction = this.sprite.scaleX > 0 ? 1 : -1;
-    const offsetX = direction * 50;
-
-    // 히트박스 크기 (공격별로 다름)
-    let width = 60;
-    let height = 60;
-    if (state === AttackState.ATTACK_3) {
-      width = 80;
-      height = 80;
-    }
-
-    this.hitbox = this.scene.add.rectangle(
-      this.sprite.x + offsetX,
-      this.sprite.y,
-      width,
-      height,
-      Colors.ENEMY_RED,
-      0.3 // 디버그용 반투명
-    );
-
-    this.scene.physics.add.existing(this.hitbox);
-    const hitboxBody = this.hitbox.body as Phaser.Physics.Arcade.Body;
-    hitboxBody.setAllowGravity(false);
-
-    console.log(`💥 히트박스 생성: ${state}`);
-
-    // 공격 지속 시간 후 히트박스 제거
-    const duration = this.attackDurations.get(state) || 300;
-    this.scene.time.delayedCall(duration, () => {
-      if (this.hitbox) {
-        this.hitbox.destroy();
-        this.hitbox = undefined;
-      }
-    });
   }
 
-  /**
-   * 히트박스 위치 동기화 (매 프레임)
-   */
-  private updateHitboxPosition() {
-    if (!this.hitbox) return;
-
-    // 플레이어 방향
-    const direction = this.sprite.scaleX > 0 ? 1 : -1;
-    const offsetX = direction * 50;
-
-    // sprite.x는 origin이 center이므로 직접 사용
-    this.hitbox.x = this.sprite.x + offsetX;
-    this.hitbox.y = this.sprite.y;
-  }
-
-  /**
-   * 공격 종료
-   */
-  private endAttack() {
-    console.log(`✅ 공격 종료: ${this.attackState}`);
-    this.attackState = AttackState.IDLE;
-    this.attackTimer = 0;
-  }
-
-  /**
-   * 콤보 리셋
-   */
-  private resetCombo() {
-    console.log('🔄 콤보 리셋');
-    this.comboTimer = 0;
-  }
-
-  /**
-   * 플랫폼과 충돌 설정
-   */
-  addCollider(platforms: Phaser.Physics.Arcade.StaticGroup) {
-    this.scene.physics.add.collider(this.sprite, platforms);
-  }
-
-  /**
-   * 히트박스 가져오기 (외부에서 충돌 감지용)
-   */
-  getHitbox(): Phaser.GameObjects.Rectangle | undefined {
-    return this.hitbox;
-  }
-
-  /**
-   * 현재 공격 상태 가져오기
-   */
-  getAttackState(): AttackState {
-    return this.attackState;
+  destroy(): void {
+    this.sprite.destroy();
   }
 }

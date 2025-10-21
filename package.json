@@ -1,14 +1,13 @@
 {
-  "name": "kwae-kwae-kwae",
+  "name": "runner-game",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "쾌쾌쾌 - Neon Comic 액션 게임",
+  "description": "Runner - 좌우 이동 + 점프 게임",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "preview": "vite preview"
   },
   "dependencies": {
     "phaser": "^3.80.1"

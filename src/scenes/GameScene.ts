@@ -1,201 +1,322 @@
 import Phaser from 'phaser';
-import { Colors } from '../utils/Colors';
+import { GameConfig } from '../config';
 import { Player } from '../entities/Player';
-import { Enemy } from '../entities/Enemy';
-
-/**
- * GameScene - 메인 게임 장면
- * 캐릭터 이동, 전투, 적 처리를 담당
- */
+import { Obstacle } from '../entities/Obstacle';
 
 export class GameScene extends Phaser.Scene {
-  private player?: Player;
-  private platforms?: Phaser.Physics.Arcade.StaticGroup;
-  private cursors?: Phaser.Types.Input.Keyboard.CursorKeys;
-  private keys?: { Z: Phaser.Input.Keyboard.Key };
-  private enemies: Enemy[] = [];
+  private player!: Player;
+  private obstacles: Obstacle[] = [];
+  private ground!: Phaser.GameObjects.Rectangle;
+
+  // 게임 상태
+  private gameOver: boolean = false;
+  private score: number = 0;
+  private scoreText!: Phaser.GameObjects.Text;
+
+  // 난이도 관련
+  private obstacleSpeed: number = GameConfig.OBSTACLE.SPEED;
+  private spawnInterval: number = GameConfig.OBSTACLE.SPAWN_INTERVAL;
+  private lastSpawnTime: number = 0;
+  private difficultyTimer: number = 0;
+
+  // UI
+  private gameOverText?: Phaser.GameObjects.Text;
+  private restartText?: Phaser.GameObjects.Text;
+
+  // Particle Emitter
+  private landingParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private collisionParticles!: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  create() {
-    console.log('🎬 GameScene 생성');
+  create(): void {
+    // 바닥 생성 (Retro Yellow)
+    const groundHeight = 20;
+    const groundY = GameConfig.HEIGHT - groundHeight / 2;
 
-    // 배경 그라데이션 (간단한 버전)
+    this.ground = this.add.rectangle(
+      GameConfig.WIDTH / 2,
+      groundY,
+      GameConfig.WIDTH,
+      groundHeight,
+      GameConfig.COLORS.GROUND
+    );
+    this.physics.add.existing(this.ground, true); // static body
+
+    // 파티클 텍스처 생성
+    this.createParticleTexture();
+
+    // 파티클 시스템 설정
+    this.landingParticles = this.add.particles(0, 0, 'particle', {
+      speed: { min: 50, max: 150 },
+      angle: { min: -120, max: -60 },
+      scale: { start: 1, end: 0 },
+      lifespan: 300,
+      gravityY: 500,
+      tint: GameConfig.COLORS.PARTICLE,
+    });
+    this.landingParticles.stop();
+
+    this.collisionParticles = this.add.particles(0, 0, 'particle', {
+      speed: { min: 100, max: 300 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1.5, end: 0 },
+      lifespan: 500,
+      gravityY: 300,
+      tint: GameConfig.COLORS.FLASH,
+    });
+    this.collisionParticles.stop();
+
+    // 플레이어 생성 (바닥 위)
+    const playerY = groundY - groundHeight / 2 - GameConfig.PLAYER.HEIGHT / 2;
+    this.player = new Player(this, 100, playerY);
+
+    // 파티클 주입
+    this.player.landingParticles = this.landingParticles;
+
+    // 플레이어와 바닥 충돌 설정
+    this.physics.add.collider(this.player.sprite, this.ground);
+
+    // 점수 UI (Retro 스타일)
+    this.scoreText = this.add.text(16, 16, 'SCORE: 0', {
+      fontSize: '32px',
+      color: '#00ffff',
+      fontFamily: 'monospace',
+      stroke: '#000033',
+      strokeThickness: 4,
+    });
+
+    // 게임 상태 초기화
+    this.gameOver = false;
+    this.score = 0;
+    this.obstacleSpeed = GameConfig.OBSTACLE.SPEED;
+    this.spawnInterval = GameConfig.OBSTACLE.SPAWN_INTERVAL;
+    this.difficultyTimer = 0;
+  }
+
+  private createParticleTexture(): void {
     const graphics = this.add.graphics();
-    graphics.fillGradientStyle(Colors.BG_DARK, Colors.BG_DARK, Colors.BG_MID, Colors.BG_MID, 1);
-    graphics.fillRect(0, 0, 1280, 720);
+    graphics.fillStyle(0xffffff, 1);
+    graphics.fillCircle(4, 4, 4);
+    graphics.generateTexture('particle', 8, 8);
+    graphics.destroy();
+  }
 
-    // 플랫폼 생성
-    this.createPlatforms();
 
-    // 플레이어 생성 (Player 클래스 사용)
-    this.createPlayer();
+  update(time: number, delta: number): void {
+    if (this.gameOver) {
+      // Space로 재시작
+      if (this.input.keyboard!.addKey('SPACE').isDown) {
+        this.restartGame();
+      }
+      return;
+    }
 
-    // 입력 설정
-    this.setupInput();
+    // 플레이어 업데이트
+    this.player.update();
 
-    // UI 텍스트
-    this.add.text(16, 16, '쾌쾌쾌 v0.2 - 3단 콤보', {
+    // 장애물 생성
+    this.spawnObstacle(time);
+
+    // 장애물 업데이트 및 정리
+    this.updateObstacles();
+
+    // 충돌 체크
+    this.checkCollisions();
+
+    // 점수 업데이트 (생존 시간)
+    this.score += (GameConfig.SCORE.SURVIVAL_RATE * delta) / 1000;
+    this.scoreText.setText(`SCORE: ${Math.floor(this.score)}`);
+
+    // 난이도 증가
+    this.updateDifficulty(delta);
+  }
+
+  private spawnObstacle(time: number): void {
+    if (time - this.lastSpawnTime > this.spawnInterval) {
+      const groundHeight = 20;
+
+      // 랜덤하게 장애물 타입 선택 (low: 30%, medium: 40%, high: 30%)
+      const rand = Math.random();
+      let type: 'low' | 'medium' | 'high';
+      if (rand < 0.3) {
+        type = 'low';
+      } else if (rand < 0.7) {
+        type = 'medium';
+      } else {
+        type = 'high';
+      }
+
+      const obstacle = new Obstacle(this, GameConfig.WIDTH + 50, 0, type);
+
+      // 장애물 높이에 맞춰 Y 위치 조정
+      const obstacleY =
+        GameConfig.HEIGHT -
+        groundHeight -
+        obstacle.getHeight() / 2;
+      obstacle.sprite.y = obstacleY;
+
+      obstacle.setVelocity(this.obstacleSpeed);
+
+      this.obstacles.push(obstacle);
+      this.lastSpawnTime = time;
+    }
+  }
+
+  private updateObstacles(): void {
+    // 화면 밖으로 나간 장애물 제거 및 보너스 점수
+    this.obstacles = this.obstacles.filter((obstacle) => {
+      // 플레이어를 지나쳤는지 체크
+      if (
+        !obstacle.passed &&
+        obstacle.sprite.x + GameConfig.OBSTACLE.WIDTH <
+          this.player.sprite.x - GameConfig.PLAYER.WIDTH / 2
+      ) {
+        obstacle.passed = true;
+        this.score += GameConfig.SCORE.OBSTACLE_BONUS;
+
+        // Score Pop-up 효과
+        this.showScorePopup(
+          obstacle.sprite.x,
+          obstacle.sprite.y,
+          `+${GameConfig.SCORE.OBSTACLE_BONUS}`
+        );
+      }
+
+      // 화면 밖으로 나간 장애물 제거
+      if (obstacle.isOffScreen()) {
+        obstacle.destroy();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  private showScorePopup(x: number, y: number, text: string): void {
+    const popup = this.add.text(x, y, text, {
       fontSize: '24px',
-      color: '#00F0FF',
+      color: '#00ff00',
       fontFamily: 'monospace',
       stroke: '#000000',
       strokeThickness: 4,
     });
 
-    this.add.text(16, 50, 'Arrow Keys: Move | Z: Attack Combo', {
-      fontSize: '16px',
-      color: '#FFFFFF',
-      fontFamily: 'monospace',
-    });
-
-    // 적 더미 생성
-    this.createEnemies();
-  }
-
-  private createPlatforms() {
-    this.platforms = this.physics.add.staticGroup();
-
-    // 바닥 플랫폼 (네온 스타일)
-    const ground = this.add.rectangle(640, 680, 1280, 80, Colors.CHAR_SECONDARY);
-    ground.setStrokeStyle(5, Colors.UI_WHITE);
-    this.physics.add.existing(ground, true); // static body
-    this.platforms.add(ground);
-
-    // 중간 플랫폼들
-    const platform1 = this.add.rectangle(400, 500, 300, 20, Colors.CHAR_PRIMARY);
-    platform1.setStrokeStyle(3, Colors.UI_WHITE);
-    this.physics.add.existing(platform1, true);
-    this.platforms.add(platform1);
-
-    const platform2 = this.add.rectangle(800, 400, 300, 20, Colors.CHAR_PRIMARY);
-    platform2.setStrokeStyle(3, Colors.UI_WHITE);
-    this.physics.add.existing(platform2, true);
-    this.platforms.add(platform2);
-
-    console.log('🏗️ 플랫폼 생성 완료');
-  }
-
-  private createPlayer() {
-    // Player 클래스 사용
-    this.player = new Player(this, 100, 500);
-
-    // 플랫폼과 충돌 설정
-    this.player.addCollider(this.platforms!);
-
-    console.log('🎮 Player 클래스 인스턴스 생성 완료');
-  }
-
-  private setupInput() {
-    // 방향키
-    this.cursors = this.input.keyboard!.createCursorKeys();
-
-    // Z키 (공격)
-    this.keys = {
-      Z: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
-    };
-
-    console.log('⌨️ 입력 설정 완료 (방향키 + Z)');
-  }
-
-  update(_time: number, delta: number) {
-    if (!this.player || !this.cursors || !this.keys) return;
-
-    // Player 업데이트 (이동 + 공격)
-    this.player.update(delta, this.cursors, this.keys);
-
-    // 충돌 감지 (히트박스 vs 적)
-    this.checkAttackCollisions();
-  }
-
-  /**
-   * 공격 충돌 감지
-   */
-  private checkAttackCollisions() {
-    const hitbox = this.player?.getHitbox();
-    if (!hitbox) return;
-
-    // 히트박스와 모든 적 충돌 체크
-    this.enemies.forEach((enemy, index) => {
-      if (this.physics.overlap(hitbox, enemy.getSprite())) {
-        // 충돌 발생!
-        const attackDirection = this.player!.sprite.scaleX > 0 ? 1 : -1;
-        const isDead = enemy.hit(attackDirection);
-
-        // HIT 텍스트 표시
-        const comboCount = this.player!.getAttackState() === 'attack1' ? 1 :
-                          this.player!.getAttackState() === 'attack2' ? 2 : 3;
-        this.showHitText(enemy.getSprite().x, enemy.getSprite().y - 30, comboCount);
-
-        // 3단 공격이면 화면 흔들림
-        if (comboCount === 3) {
-          this.cameras.main.shake(100, 0.01); // 0.1초, 강도 0.01
-        }
-
-        // 사망 시 배열에서 제거
-        if (isDead) {
-          this.enemies.splice(index, 1);
-        }
-      }
-    });
-  }
-
-  /**
-   * 적 더미 생성
-   */
-  private createEnemies() {
-    // 5개 적 생성 (다양한 위치)
-    const positions = [
-      { x: 400, y: 450 },  // 왼쪽 플랫폼 위
-      { x: 500, y: 450 },
-      { x: 800, y: 350 },  // 오른쪽 플랫폼 위
-      { x: 900, y: 350 },
-      { x: 1000, y: 600 }, // 바닥
-    ];
-
-    positions.forEach(pos => {
-      const enemy = new Enemy(this, pos.x, pos.y);
-
-      // 플랫폼과 충돌 설정
-      this.physics.add.collider(enemy.getSprite(), this.platforms!);
-
-      this.enemies.push(enemy);
-    });
-
-    console.log(`🎯 적 ${this.enemies.length}개 생성 완료`);
-  }
-
-  /**
-   * HIT 텍스트 표시 (외부에서 호출 가능)
-   */
-  showHitText(x: number, y: number, comboCount: number = 1) {
-    const text = this.add.text(x, y, 'HIT!', {
-      fontSize: '48px',
-      color: '#FFFF00', // 네온 노랑
-      fontFamily: 'monospace',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 6,
-    });
-
-    // 중앙 정렬
-    text.setOrigin(0.5, 0.5);
-
-    // 애니메이션: 확대 + 페이드아웃
     this.tweens.add({
-      targets: text,
-      scale: 1.5,
+      targets: popup,
+      y: y - 50,
       alpha: 0,
-      y: y - 50, // 위로 떠오름
-      duration: 500,
-      ease: 'Back.easeOut',
-      onComplete: () => {
-        text.destroy();
-      },
+      duration: 1000,
+      ease: 'Cubic.easeOut',
+      onComplete: () => popup.destroy(),
+    });
+  }
+
+  private checkCollisions(): void {
+    for (const obstacle of this.obstacles) {
+      if (
+        this.physics.overlap(this.player.sprite, obstacle.sprite)
+      ) {
+        this.triggerGameOver(obstacle);
+        break;
+      }
+    }
+  }
+
+  private updateDifficulty(delta: number): void {
+    this.difficultyTimer += delta;
+
+    if (this.difficultyTimer >= GameConfig.DIFFICULTY.INCREASE_INTERVAL) {
+      // 속도 증가
+      this.obstacleSpeed *= GameConfig.DIFFICULTY.SPEED_MULTIPLIER;
+
+      // 생성 간격 감소 (더 자주 생성)
+      this.spawnInterval *= GameConfig.DIFFICULTY.SPAWN_MULTIPLIER;
+
+      this.difficultyTimer = 0;
+
+      console.log(
+        `Difficulty UP! Speed: ${this.obstacleSpeed.toFixed(
+          0
+        )}, Interval: ${this.spawnInterval.toFixed(0)}ms`
+      );
+    }
+  }
+
+  private triggerGameOver(_obstacle: Obstacle): void {
+    this.gameOver = true;
+
+    // Camera Shake
+    this.cameras.main.shake(
+      GameConfig.CAMERA.SHAKE_DURATION,
+      GameConfig.CAMERA.SHAKE_INTENSITY
+    );
+
+    // Collision Particles
+    this.collisionParticles.emitParticleAt(
+      this.player.sprite.x,
+      this.player.sprite.y,
+      20
+    );
+
+    // 플레이어 즉시 사라지기
+    this.player.sprite.setVisible(false);
+
+    // 모든 장애물 정지
+    this.obstacles.forEach((obs) => {
+      obs.sprite.setVelocityX(0);
     });
 
-    console.log(`💥 HIT 텍스트 표시: ${comboCount}단 콤보`);
+    // 게임 오버 UI (Retro 스타일)
+    this.time.delayedCall(500, () => {
+      this.gameOverText = this.add
+        .text(GameConfig.WIDTH / 2, GameConfig.HEIGHT / 2 - 80, 'GAME OVER', {
+          fontSize: '72px',
+          color: '#ff00ff',
+          fontFamily: 'monospace',
+          stroke: '#000033',
+          strokeThickness: 8,
+        })
+        .setOrigin(0.5);
+
+      // 깜빡이는 효과
+      this.tweens.add({
+        targets: this.gameOverText,
+        alpha: 0.3,
+        duration: 500,
+        yoyo: true,
+        repeat: -1,
+      });
+
+      this.restartText = this.add
+        .text(
+          GameConfig.WIDTH / 2,
+          GameConfig.HEIGHT / 2 + 20,
+          `FINAL SCORE: ${Math.floor(this.score)}\n\nPRESS SPACE TO RESTART`,
+          {
+            fontSize: '24px',
+            color: '#00ffff',
+            fontFamily: 'monospace',
+            align: 'center',
+            stroke: '#000033',
+            strokeThickness: 4,
+          }
+        )
+        .setOrigin(0.5);
+    });
+  }
+
+  private restartGame(): void {
+    // UI 정리
+    this.gameOverText?.destroy();
+    this.restartText?.destroy();
+
+    // 장애물 정리
+    this.obstacles.forEach((obstacle) => obstacle.destroy());
+    this.obstacles = [];
+
+    // 씬 재시작
+    this.scene.restart();
   }
 }

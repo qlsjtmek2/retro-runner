@@ -1,13 +1,13 @@
 import { defineConfig } from 'vite';
+import path from 'path';
 
 export default defineConfig({
-  server: {
-    port: 5173,
-    open: true
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
   },
-  build: {
-    target: 'esnext',
-    minify: false, // 프로토타입이므로 minify 비활성화
-    sourcemap: true
-  }
+  server: {
+    port: 3000,
+  },
 });
