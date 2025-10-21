@@ -25,13 +25,11 @@
         align-items: center;
       }
 
-      #controls,
-      #mobile-controls {
+      #controls {
         user-select: none;
       }
 
-      #controls h2,
-      #mobile-controls h2 {
+      #controls h2 {
         font-size: 32px;
         margin-bottom: 20px;
         color: #00ffff;
@@ -39,8 +37,7 @@
         paint-order: stroke fill;
       }
 
-      #controls .key-info,
-      #mobile-controls .key-info {
+      #controls .key-info {
         margin: 10px 0;
         font-size: 18px;
         color: #ffff00;
@@ -51,8 +48,7 @@
         paint-order: stroke fill;
       }
 
-      #controls .key,
-      #mobile-controls .key {
+      #controls .key {
         background: #1a1a2e;
         border: 2px solid #00ffff;
         padding: 6px 10px;
@@ -63,11 +59,6 @@
         -webkit-text-stroke: 2px #000033;
         paint-order: stroke fill;
         box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
-      }
-
-      /* 데스크탑에서는 모바일 컨트롤 숨기기 */
-      #mobile-controls {
-        display: none;
       }
 
       #game-container {
@@ -169,45 +160,22 @@
         }
 
         #app-wrapper {
-          flex-direction: row-reverse;
-          gap: 20px;
+          flex-direction: column;
+          gap: 0;
           width: 100vw;
           height: 100vh;
-          padding: 20px;
-          box-sizing: border-box;
-          align-items: flex-start;
         }
 
         #controls {
           display: none;
         }
 
-        #mobile-controls {
-          display: block;
-          flex-shrink: 0;
-        }
-
-        #mobile-controls h2 {
-          font-size: 24px;
-          margin-bottom: 15px;
-        }
-
-        #mobile-controls .key-info {
-          font-size: 14px;
-          margin: 8px 0;
-        }
-
-        #mobile-controls .key {
-          font-size: 16px;
-          padding: 4px 8px;
-        }
-
         #game-container {
-          flex: 1;
-          min-width: 0;
+          width: 100%;
+          height: 100%;
           box-shadow: none;
-          border: 2px solid #00ffff;
-          border-radius: 4px;
+          border: none;
+          border-radius: 0;
         }
 
         #game-container::before,
@@ -216,27 +184,19 @@
         }
       }
 
-      /* 세로 모드 또는 작은 화면에서는 컨트롤 숨기기 */
-      @media (max-height: 600px), (max-width: 480px) {
+      /* 세로 모드에서도 지원 */
+      @media (max-height: 600px) and (orientation: portrait) {
         #app-wrapper {
-          flex-direction: column;
-          padding: 0;
-          gap: 0;
-        }
-
-        #mobile-controls {
-          display: none !important;
+          justify-content: center;
         }
 
         #game-container {
-          width: 100vw;
-          height: 100vh;
-          border: none;
+          max-height: 100vh;
         }
       }
 
     </style>
-    <script type="module" crossorigin src="/retro-runner/assets/index-D4qOiTMH.js"></script>
+    <script type="module" crossorigin src="/retro-runner/assets/index-DUNGHNld.js"></script>
   </head>
   <body>
     <div id="app-wrapper">
@@ -260,25 +220,6 @@
         </div>
       </div>
       <div id="game-container"></div>
-      <div id="mobile-controls">
-        <h2>TOUCH CONTROLS</h2>
-        <div class="key-info">
-          <span class="key">👆</span>
-          <span>SWIPE UP: JUMP</span>
-        </div>
-        <div class="key-info">
-          <span class="key">👇</span>
-          <span>SWIPE DOWN: FALL</span>
-        </div>
-        <div class="key-info">
-          <span class="key">👈</span>
-          <span>TAP LEFT: MOVE LEFT</span>
-        </div>
-        <div class="key-info">
-          <span class="key">👉</span>
-          <span>TAP RIGHT: MOVE RIGHT</span>
-        </div>
-      </div>
     </div>
   </body>
 </html>
