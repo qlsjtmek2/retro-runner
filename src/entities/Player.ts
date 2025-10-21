@@ -13,6 +13,12 @@ export class Player {
   private jumpCount: number = 0;
   private hasReleasedJump: boolean = true; // 점프 키를 뗐는지 추적
 
+  // 터치 입력 상태
+  public touchLeft: boolean = false;
+  public touchRight: boolean = false;
+  public touchJump: boolean = false;
+  public touchFall: boolean = false;
+
   // 파티클 (외부에서 주입)
   public landingParticles?: Phaser.GameObjects.Particles.ParticleEmitter;
 
@@ -50,17 +56,22 @@ export class Player {
       this.jumpCount = 0;
     }
 
-    // 좌우 이동
-    if (this.cursors.left.isDown) {
+    // 좌우 이동 (키보드 + 터치)
+    const moveLeft = this.cursors.left.isDown || this.touchLeft;
+    const moveRight = this.cursors.right.isDown || this.touchRight;
+
+    if (moveLeft && !moveRight) {
       this.sprite.setVelocityX(-GameConfig.PLAYER.SPEED);
-    } else if (this.cursors.right.isDown) {
+    } else if (moveRight && !moveLeft) {
       this.sprite.setVelocityX(GameConfig.PLAYER.SPEED);
     } else {
       this.sprite.setVelocityX(0);
     }
 
-    // 더블점프 시스템
-    if (this.cursors.up.isDown && this.hasReleasedJump) {
+    // 더블점프 시스템 (키보드 + 터치)
+    const jumpPressed = this.cursors.up.isDown || this.touchJump;
+
+    if (jumpPressed && this.hasReleasedJump) {
       if (this.jumpCount < GameConfig.PLAYER.MAX_JUMPS) {
         this.sprite.setVelocityY(GameConfig.PLAYER.JUMP_VELOCITY);
         this.applyStretch(); // 점프 시 Stretch
@@ -70,13 +81,24 @@ export class Player {
     }
 
     // 점프 키를 뗐을 때 플래그 리셋
-    if (!this.cursors.up.isDown) {
+    if (!jumpPressed) {
       this.hasReleasedJump = true;
     }
 
-    // 빠른 하강 (공중에 있을 때만)
-    if (this.cursors.down.isDown && !isOnGround) {
+    // 터치 점프는 한 프레임만 유지
+    if (this.touchJump) {
+      this.touchJump = false;
+    }
+
+    // 빠른 하강 (공중에 있을 때만, 키보드 + 터치)
+    const fallPressed = this.cursors.down.isDown || this.touchFall;
+    if (fallPressed && !isOnGround) {
       this.sprite.setVelocityY(GameConfig.PLAYER.FAST_FALL_VELOCITY);
+    }
+
+    // 터치 하강도 한 프레임만 유지
+    if (this.touchFall) {
+      this.touchFall = false;
     }
 
     // 착지 감지 (Squash 효과)

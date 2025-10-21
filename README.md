@@ -71,3 +71,5 @@ src/
 ## 📝 라이선스
 
 MIT License
+
+배포 방법 : npm run deploy

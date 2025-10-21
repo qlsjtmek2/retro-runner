@@ -94,6 +94,48 @@ export class GameScene extends Phaser.Scene {
     this.obstacleSpeed = GameConfig.OBSTACLE.SPEED;
     this.spawnInterval = GameConfig.OBSTACLE.SPAWN_INTERVAL;
     this.difficultyTimer = 0;
+
+    // 터치 입력 설정
+    this.setupTouchControls();
+  }
+
+  private setupTouchControls(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // 게임오버 상태면 재시작
+      if (this.gameOver) {
+        this.restartGame();
+        return;
+      }
+
+      const x = pointer.x;
+      const y = pointer.y;
+      const width = GameConfig.WIDTH;
+      const height = GameConfig.HEIGHT;
+
+      // 좌측 1/3: 왼쪽 이동
+      if (x < width / 3) {
+        this.player.touchLeft = true;
+      }
+      // 우측 1/3: 오른쪽 이동
+      else if (x > width * 2/3) {
+        this.player.touchRight = true;
+      }
+      // 중앙: 점프
+      else {
+        this.player.touchJump = true;
+      }
+
+      // 하단 영역 탭: 빠른 하강 (선택적)
+      if (y > height * 0.7) {
+        this.player.touchFall = true;
+      }
+    });
+
+    this.input.on('pointerup', () => {
+      // 좌우 이동 중지 (어느 위치에서 떼든 모든 이동 중지)
+      this.player.touchLeft = false;
+      this.player.touchRight = false;
+    });
   }
 
   private createParticleTexture(): void {
@@ -293,7 +335,7 @@ export class GameScene extends Phaser.Scene {
         .text(
           GameConfig.WIDTH / 2,
           GameConfig.HEIGHT / 2 + 20,
-          `FINAL SCORE: ${Math.floor(this.score)}\n\nPRESS SPACE TO RESTART`,
+          `FINAL SCORE: ${Math.floor(this.score)}\n\nTAP TO RESTART`,
           {
             fontSize: '24px',
             color: '#00ffff',
