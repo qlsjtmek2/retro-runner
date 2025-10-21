@@ -4,7 +4,7 @@
 
 ## 🕹️ 플레이하기
 
-**Live Demo:** https://toy-ccf2wz2kt-huis-projects-01f1d25a.vercel.app
+**Live Demo:** https://qlsjtmek2.github.io/retro-runner/
 
 ## 🎯 게임 특징
 
